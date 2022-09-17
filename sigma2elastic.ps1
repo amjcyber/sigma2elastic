@@ -1,25 +1,25 @@
-$rulePath = '.\rules'
-$rules = Get-ChildItem -Path $rulePath -Exclude "output","old"
-$rulePath = "/home/arturo/Documentos/DFIR/sigma2elastic/rules"
+$rulePath = "./sigma/rules/windows"
+$rules = Get-ChildItem -Path $rulePath -Recurse | where {! $_.PSIsContainer }
 $parser='./elastic-agent-parser.yml'
-$sigmaSource='../sigma'
-$output='./output'
+$sigmaSource='./sigma'
+$output='./output-test'
 $backend='es-qs'
+$testLog = Test-Path './sigma2elastic.log'
 if ($testLog -eq $true) { Remove-Item ./sigma2elastic.log}
 
 foreach ($rule in $rules){
-    #$queryNoRegex = sigma convert -t elasticsearch -f default -p ecs_windows $rule
 
-    $queryNoRegex = python3 ./tools/sigmac -t $backend -c $parser --backend-option keyword_base_fields="*" --backend-option analyzed_sub_field_name=".text" --backend-option keyword_whitelist="winlog.channel,winlog.event_id" --backend-option analyzed_sub_fields="TargetUserName, SourceUserName, TargetHostName, CommandLine, ProcessName, ParentProcessName, ParentImage, Image" --backend-option keyword_base_fields="*" $rule.FullName
+    $queryNoRegex = python3 ./sigma/tools/sigmac -t $backend -c $parser --backend-option keyword_base_fields="*" --backend-option analyzed_sub_field_name=".text" --backend-option keyword_whitelist="winlog.channel,winlog.event_id" --backend-option analyzed_sub_fields="TargetUserName, SourceUserName, TargetHostName, CommandLine, ProcessName, ParentProcessName, ParentImage, Image" --backend-option keyword_base_fields="*" $rule.FullName
 
     if ($queryNoRegex -eq $null) { 
+        # Log fails
         Write-Host "Problem translating "$rule.Name""
-        Add-Content -Path ./sigma2elastic.log -Value "`nProblem translating $ruleName"
+        Add-Content -Path ./sigma2elastic.log -Value "`nProblem translating "$rule.Name""
     }
 
     else {
 
-        $query = python3 ./tools/sigmac -t $backend -c $parser --backend-option keyword_base_fields="*" --backend-option analyzed_sub_field_name=".text" --backend-option keyword_whitelist="winlog.channel,winlog.event_id" --backend-option case_insensitive_whitelist="*" --backend-option analyzed_sub_fields="TargetUserName, SourceUserName, TargetHostName, CommandLine, ProcessName, ParentProcessName, ParentImage, Image" --backend-option keyword_base_fields="*" $rule.FullName
+        $query = python3 ./sigma/tools/sigmac -t $backend -c $parser --backend-option keyword_base_fields="*" --backend-option analyzed_sub_field_name=".text" --backend-option keyword_whitelist="winlog.channel,winlog.event_id" --backend-option case_insensitive_whitelist="*" --backend-option analyzed_sub_fields="TargetUserName, SourceUserName, TargetHostName, CommandLine, ProcessName, ParentProcessName, ParentImage, Image" --backend-option keyword_base_fields="*" $rule.FullName
         
         $ruleInfo = Get-Content $rule | ConvertFrom-Yaml
 
@@ -41,7 +41,7 @@ foreach ($rule in $rules){
                 enabled = $true
                 severity = $ruleInfo.level
                 false_positives = $ruleInfo.falsepositives
-                from = "now-720"
+                from = "now-720s"
                 type = "query"
                 language = "lucene"
                 index = ("winlogbeat-*","logs-*")
@@ -56,24 +56,11 @@ foreach ($rule in $rules){
         $ruleJson = $finalRule | ConvertTo-Json -Compress
         $ruleName = $rule.Name+".ndjson"
         Set-Content -Path $ruleName -Value $ruleJson
-        Move-Item -Path $ruleName -Destination ./rules/output/ -Force 
+        Move-Item -Path $ruleName -Destination ./output-2/ -Force 
 
         # Log results
         Write-Host "Rule $ruleName has been translated succesfully"
         Add-Content -Path ./sigma2elastic.log -Value "`nRule $ruleName has been translated succesfully"
-        <#
-        $test = Test-Path ./rules/output/$ruleName
-        $testLog = Test-Path ./sigma2elastic.log
-        
-        if ($test -eq $true) {
-            Write-Host "Rule $ruleName has been translated succesfully"
-            Add-Content -Path ./sigma2elastic.log -Value "`nRule $ruleName has been translated succesfully"
-        }
-        else {
-            Write-Host "Problem translating $ruleName"
-            Add-Content -Path ./sigma2elastic.log -Value "`nProblem translating $ruleName"
-        }
-        #>
 
 }
 }
